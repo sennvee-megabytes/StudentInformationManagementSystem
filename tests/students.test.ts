@@ -14,6 +14,10 @@ const mockUserCreate = vi.fn();
 const mockUserUpdate = vi.fn();
 const mockEnrollmentCreate = vi.fn();
 const mockEnrollmentUpsert = vi.fn();
+const mockAcademicFindFirst = vi.fn();
+const mockAcademicCreate = vi.fn();
+const mockAcademicUpdate = vi.fn();
+const mockAcademicDelete = vi.fn();
 const mockSessionUpdateMany = vi.fn();
 const mockAuditCreate = vi.fn();
 
@@ -43,6 +47,12 @@ vi.mock("@/lib/db", () => ({
       create: (...args: unknown[]) => mockEnrollmentCreate(...args),
       upsert: (...args: unknown[]) => mockEnrollmentUpsert(...args),
     },
+    academicRecord: {
+      findFirst: (...args: unknown[]) => mockAcademicFindFirst(...args),
+      create: (...args: unknown[]) => mockAcademicCreate(...args),
+      update: (...args: unknown[]) => mockAcademicUpdate(...args),
+      delete: (...args: unknown[]) => mockAcademicDelete(...args),
+    },
     session: {
       updateMany: (...args: unknown[]) => mockSessionUpdateMany(...args),
     },
@@ -64,6 +74,11 @@ vi.mock("@/lib/db", () => ({
         enrollment: {
           create: (...args: unknown[]) => mockEnrollmentCreate(...args),
           upsert: (...args: unknown[]) => mockEnrollmentUpsert(...args),
+        },
+        academicRecord: {
+          create: (...args: unknown[]) => mockAcademicCreate(...args),
+          update: (...args: unknown[]) => mockAcademicUpdate(...args),
+          delete: (...args: unknown[]) => mockAcademicDelete(...args),
         },
         session: {
           updateMany: (...args: unknown[]) => mockSessionUpdateMany(...args),
@@ -242,5 +257,73 @@ describe("Phase 4 – Registrar & Student Workflows", () => {
     const whereArg = mockStudentFindMany.mock.calls[0]?.[0]?.where;
     expect(whereArg.deletedAt).toBeNull();
     expect(whereArg.OR[0].studentNumber.contains).toBe("%'; DROP TABLE students;--");
+  });
+
+  it("registers, updates, and deletes academic subject records with immutable audit logging", async () => {
+    mockStudentFindUnique.mockResolvedValue({
+      id: "stu-1",
+      studentNumber: "202612345",
+      deletedAt: null,
+    });
+    mockAcademicCreate.mockResolvedValue({
+      id: "acad-1",
+      studentId: "stu-1",
+      schoolYear: "2026-2027",
+      semester: "FIRST",
+      subjectCode: "ITEC 50",
+      subjectTitle: "Web Systems and Technologies",
+      units: 3,
+      grade: null,
+      remarks: "ENROLLED",
+    });
+
+    const created = await studentService.addAcademicRecord(staffActor, "stu-1", {
+      schoolYear: "2026-2027",
+      semester: "FIRST",
+      subjectCode: "ITEC 50",
+      subjectTitle: "Web Systems and Technologies",
+      units: 3,
+      grade: null,
+      remarks: "ENROLLED",
+    });
+    expect(created.subjectCode).toBe("ITEC 50");
+    expect(created.units).toBe(3);
+
+    mockAcademicFindFirst.mockResolvedValue({
+      id: "acad-1",
+      studentId: "stu-1",
+      schoolYear: "2026-2027",
+      semester: "FIRST",
+      subjectCode: "ITEC 50",
+    });
+    mockAcademicUpdate.mockResolvedValue({
+      id: "acad-1",
+      studentId: "stu-1",
+      schoolYear: "2026-2027",
+      semester: "FIRST",
+      subjectCode: "ITEC 50",
+      subjectTitle: "Web Systems and Technologies",
+      units: 3,
+      grade: "1.25",
+      remarks: "PASSED",
+    });
+
+    const updated = await studentService.updateAcademicRecord(staffActor, "stu-1", "acad-1", {
+      grade: "1.25",
+      remarks: "PASSED",
+    });
+    expect(updated.grade).toBe("1.25");
+    expect(updated.remarks).toBe("PASSED");
+
+    mockAcademicDelete.mockResolvedValue({ id: "acad-1" });
+    const deleted = await studentService.deleteAcademicRecord(staffActor, "stu-1", "acad-1");
+    expect(deleted.deleted).toBe(true);
+
+    const actions = mockAuditCreate.mock.calls.map((c) => c[0]?.data?.action);
+    expect(actions).toEqual([
+      "ACADEMIC_RECORD_ADDED",
+      "ACADEMIC_RECORD_UPDATED",
+      "ACADEMIC_RECORD_DELETED",
+    ]);
   });
 });

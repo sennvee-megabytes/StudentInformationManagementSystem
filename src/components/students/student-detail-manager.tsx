@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, RotateCcw, Save, Trash2 } from "lucide-react";
+import { AlertTriangle, BookOpen, Plus, RotateCcw, Save, Trash2 } from "lucide-react";
 
 type ProgramOption = { id: string; code: string; name: string };
 type SectionOption = {
@@ -23,6 +23,17 @@ type EnrollmentItem = {
   status: string;
   program: { id: string; code: string; name: string };
   section: { id: string; name: string; yearLevel: number } | null;
+};
+
+type AcademicRecordItem = {
+  id: string;
+  schoolYear: string;
+  semester: "FIRST" | "SECOND" | "MIDYEAR";
+  subjectCode: string;
+  subjectTitle: string;
+  units: number;
+  grade: string | null;
+  remarks: string | null;
 };
 
 type StudentDetail = {
@@ -47,6 +58,7 @@ type StudentDetail = {
   version: number;
   deletedAt: string | Date | null;
   enrollments: EnrollmentItem[];
+  academicRecords?: AcademicRecordItem[];
 };
 
 export function StudentDetailManager({
@@ -84,6 +96,20 @@ export function StudentDetailManager({
   // Term enrollment form
   const [termSchoolYear, setTermSchoolYear] = useState("2026-2027");
   const [termSemester, setTermSemester] = useState<"FIRST" | "SECOND" | "MIDYEAR">("FIRST");
+
+  // Academic subject registration / grade encoding form
+  const [acadSchoolYear, setAcadSchoolYear] = useState("2026-2027");
+  const [acadSemester, setAcadSemester] = useState<"FIRST" | "SECOND" | "MIDYEAR">("FIRST");
+  const [subjectCode, setSubjectCode] = useState("");
+  const [subjectTitle, setSubjectTitle] = useState("");
+  const [units, setUnits] = useState("3.0");
+  const [grade, setGrade] = useState("");
+  const [remarks, setRemarks] = useState("ENROLLED");
+
+  // Inline editing state for academic records
+  const [editingRecordId, setEditingRecordId] = useState<string | null>(null);
+  const [editGrade, setEditGrade] = useState("");
+  const [editRemarks, setEditRemarks] = useState("");
 
   const [error, setError] = useState<string | null>(null);
   const [conflict, setConflict] = useState(false);
@@ -242,6 +268,100 @@ export function StudentDetailManager({
       setError(body.error?.message ?? "Restore failed.");
     }
   }
+
+  async function handleAddAcademicRecord(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setError(null);
+    setSavedMessage(null);
+    setLoading(true);
+
+    try {
+      const res = await fetch(`/api/students/${student.id}/academic`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          schoolYear: acadSchoolYear.trim(),
+          semester: acadSemester,
+          subjectCode: subjectCode.trim().toUpperCase(),
+          subjectTitle: subjectTitle.trim(),
+          units: Number(units),
+          grade: grade.trim() || null,
+          remarks: remarks.trim() || null,
+        }),
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        setError(body.error?.message ?? "Failed to register academic subject.");
+        return;
+      }
+      setSubjectCode("");
+      setSubjectTitle("");
+      setUnits("3.0");
+      setGrade("");
+      setRemarks("ENROLLED");
+      setSavedMessage("Academic subject registered for student.");
+      router.refresh();
+    } catch {
+      setError("Network error while registering academic subject.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleUpdateAcademicRecord(recordId: string) {
+    setError(null);
+    setSavedMessage(null);
+    setLoading(true);
+
+    try {
+      const res = await fetch(`/api/students/${student.id}/academic/${recordId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          grade: editGrade.trim() || null,
+          remarks: editRemarks.trim() || null,
+        }),
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        setError(body.error?.message ?? "Failed to update subject grade/remarks.");
+        return;
+      }
+      setEditingRecordId(null);
+      setSavedMessage("Subject grade and remarks updated.");
+      router.refresh();
+    } catch {
+      setError("Network error while updating subject record.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleDeleteAcademicRecord(recordId: string, code: string) {
+    if (!confirm(`Remove subject ${code} from this student's academic records?`)) return;
+    setError(null);
+    setSavedMessage(null);
+    setLoading(true);
+
+    try {
+      const res = await fetch(`/api/students/${student.id}/academic/${recordId}`, {
+        method: "DELETE",
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        setError(body.error?.message ?? "Failed to remove academic subject.");
+        return;
+      }
+      setSavedMessage(`Removed subject ${code}.`);
+      router.refresh();
+    } catch {
+      setError("Network error while removing subject record.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const academicRecords = student.academicRecords ?? [];
 
   return (
     <div className="space-y-6">
@@ -596,6 +716,221 @@ export function StudentDetailManager({
               ))
             )}
           </div>
+        </div>
+      </div>
+
+      {/* Academic Subject Registration & Grade Encoding */}
+      <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-xs">
+        <div className="flex items-center gap-2">
+          <BookOpen className="h-4 w-4 text-emerald-700" />
+          <h2 className="text-sm font-semibold text-slate-900">
+            Academic Subjects, Units & Grade Encoding
+          </h2>
+        </div>
+        <p className="mt-1 text-xs text-slate-500">
+          Register subjects for the student&apos;s term and encode or update grades and remarks.
+          Subjects added here appear immediately in the Student Portal under Academic Records.
+        </p>
+
+        <form
+          onSubmit={handleAddAcademicRecord}
+          className="mt-4 grid gap-3 rounded-lg border border-slate-200 bg-slate-50/70 p-4 sm:grid-cols-12"
+        >
+          <div className="sm:col-span-2">
+            <label className="block text-xs font-medium text-slate-700">School Year</label>
+            <input
+              required
+              value={acadSchoolYear}
+              onChange={(e) => setAcadSchoolYear(e.target.value)}
+              placeholder="2026-2027"
+              className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs"
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <label className="block text-xs font-medium text-slate-700">Semester</label>
+            <select
+              value={acadSemester}
+              onChange={(e) =>
+                setAcadSemester(e.target.value as "FIRST" | "SECOND" | "MIDYEAR")
+              }
+              className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs"
+            >
+              <option value="FIRST">1st Semester</option>
+              <option value="SECOND">2nd Semester</option>
+              <option value="MIDYEAR">Midyear</option>
+            </select>
+          </div>
+          <div className="sm:col-span-2">
+            <label className="block text-xs font-medium text-slate-700">Subject Code</label>
+            <input
+              required
+              value={subjectCode}
+              onChange={(e) => setSubjectCode(e.target.value)}
+              placeholder="e.g. ITEC 50"
+              className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 font-mono text-xs uppercase"
+            />
+          </div>
+          <div className="sm:col-span-3">
+            <label className="block text-xs font-medium text-slate-700">Descriptive Title</label>
+            <input
+              required
+              value={subjectTitle}
+              onChange={(e) => setSubjectTitle(e.target.value)}
+              placeholder="e.g. Web Systems and Technologies"
+              className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs"
+            />
+          </div>
+          <div className="sm:col-span-1">
+            <label className="block text-xs font-medium text-slate-700">Units</label>
+            <input
+              type="number"
+              step="0.5"
+              min="0.5"
+              max="12"
+              required
+              value={units}
+              onChange={(e) => setUnits(e.target.value)}
+              className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs"
+            />
+          </div>
+          <div className="sm:col-span-1">
+            <label className="block text-xs font-medium text-slate-700">Grade</label>
+            <input
+              value={grade}
+              onChange={(e) => setGrade(e.target.value)}
+              placeholder="1.25 / —"
+              className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs"
+            />
+          </div>
+          <div className="sm:col-span-1">
+            <label className="block text-xs font-medium text-slate-700">Remarks</label>
+            <input
+              value={remarks}
+              onChange={(e) => setRemarks(e.target.value)}
+              placeholder="ENROLLED"
+              className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs"
+            />
+          </div>
+          <div className="flex items-end justify-end sm:col-span-12">
+            <button
+              type="submit"
+              disabled={loading || !!student.deletedAt}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3.5 py-2 text-xs font-medium text-white hover:bg-emerald-800 disabled:opacity-60"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Register Subject
+            </button>
+          </div>
+        </form>
+
+        <div className="mt-4 overflow-x-auto rounded-lg border border-slate-200">
+          <table className="w-full text-left text-xs">
+            <thead className="border-b border-slate-200 bg-slate-50 text-[11px] font-semibold uppercase text-slate-600">
+              <tr>
+                <th className="px-3 py-2.5">Term</th>
+                <th className="px-3 py-2.5">Subject Code</th>
+                <th className="px-3 py-2.5">Descriptive Title</th>
+                <th className="px-3 py-2.5">Units</th>
+                <th className="px-3 py-2.5">Grade</th>
+                <th className="px-3 py-2.5">Remarks</th>
+                <th className="px-3 py-2.5 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {academicRecords.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-6 text-center text-slate-500">
+                    No subjects registered yet. Use the form above to register subjects and encode
+                    grades for this student.
+                  </td>
+                </tr>
+              ) : (
+                academicRecords.map((rec) => {
+                  const isEditing = editingRecordId === rec.id;
+                  return (
+                    <tr key={rec.id} className="hover:bg-slate-50/70">
+                      <td className="px-3 py-2.5 text-slate-600">
+                        {rec.schoolYear} · {rec.semester}
+                      </td>
+                      <td className="px-3 py-2.5 font-mono font-semibold text-slate-900">
+                        {rec.subjectCode}
+                      </td>
+                      <td className="px-3 py-2.5 text-slate-800">{rec.subjectTitle}</td>
+                      <td className="px-3 py-2.5 text-slate-700">{Number(rec.units).toFixed(1)}</td>
+                      <td className="px-3 py-2.5 font-semibold text-slate-900">
+                        {isEditing ? (
+                          <input
+                            value={editGrade}
+                            onChange={(e) => setEditGrade(e.target.value)}
+                            placeholder="e.g. 1.50"
+                            className="w-20 rounded border border-slate-300 px-2 py-1 text-xs"
+                          />
+                        ) : (
+                          rec.grade ?? "—"
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5 text-slate-600">
+                        {isEditing ? (
+                          <input
+                            value={editRemarks}
+                            onChange={(e) => setEditRemarks(e.target.value)}
+                            placeholder="PASSED / ENROLLED"
+                            className="w-32 rounded border border-slate-300 px-2 py-1 text-xs"
+                          />
+                        ) : (
+                          rec.remarks ?? "—"
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5 text-right">
+                        {isEditing ? (
+                          <div className="inline-flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              disabled={loading}
+                              onClick={() => handleUpdateAcademicRecord(rec.id)}
+                              className="rounded bg-emerald-700 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-emerald-800"
+                            >
+                              Save
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingRecordId(null)}
+                              className="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] text-slate-700 hover:bg-slate-50"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="inline-flex items-center gap-2">
+                            <button
+                              type="button"
+                              disabled={!!student.deletedAt}
+                              onClick={() => {
+                                setEditingRecordId(rec.id);
+                                setEditGrade(rec.grade ?? "");
+                                setEditRemarks(rec.remarks ?? "");
+                              }}
+                              className="font-medium text-emerald-700 hover:underline disabled:opacity-50"
+                            >
+                              Edit Grade
+                            </button>
+                            <button
+                              type="button"
+                              disabled={loading || !!student.deletedAt}
+                              onClick={() => handleDeleteAcademicRecord(rec.id, rec.subjectCode)}
+                              className="font-medium text-red-600 hover:underline disabled:opacity-50"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>

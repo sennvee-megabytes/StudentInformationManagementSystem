@@ -4,6 +4,8 @@ import { audit } from "@/lib/audit";
 import { HttpError } from "@/lib/http";
 import { generateTemporaryPassword, hashPassword } from "@/lib/password";
 import {
+  AcademicRecordCreateInput,
+  AcademicRecordUpdateInput,
   EnrollmentUpsertInput,
   StudentCreateInput,
   StudentListQuery,
@@ -139,6 +141,9 @@ export const studentService = {
             section: { select: { id: true, name: true, yearLevel: true } },
           },
         },
+        academicRecords: {
+          orderBy: [{ schoolYear: "desc" }, { semester: "desc" }, { subjectCode: "asc" }],
+        },
       },
     });
 
@@ -146,7 +151,13 @@ export const studentService = {
       throw new HttpError(404, "NOT_FOUND", "Student record not found.");
     }
 
-    return student;
+    return {
+      ...student,
+      academicRecords: student.academicRecords.map((r) => ({
+        ...r,
+        units: Number(r.units),
+      })),
+    };
   },
 
   async create(
@@ -520,6 +531,143 @@ export const studentService = {
       );
 
       return { id, restored: true };
+    });
+  },
+
+  async addAcademicRecord(
+    actor: Actor,
+    studentId: string,
+    input: AcademicRecordCreateInput,
+    meta?: { ip?: string; userAgent?: string }
+  ) {
+    const student = await prisma.student.findUnique({ where: { id: studentId } });
+    if (!student || student.deletedAt !== null) {
+      throw new HttpError(404, "NOT_FOUND", "Student record not found.");
+    }
+
+    return prisma.$transaction(async (tx) => {
+      const record = await tx.academicRecord.create({
+        data: {
+          studentId,
+          schoolYear: input.schoolYear,
+          semester: input.semester,
+          subjectCode: input.subjectCode,
+          subjectTitle: input.subjectTitle,
+          units: input.units,
+          grade: input.grade ?? null,
+          remarks: input.remarks ?? null,
+          encodedById: actor.user.id,
+        },
+      });
+
+      await audit(
+        {
+          actorId: actor.user.id,
+          actorRole: actor.user.role,
+          action: "ACADEMIC_RECORD_ADDED",
+          entityType: "AcademicRecord",
+          entityId: record.id,
+          metadata: {
+            studentId,
+            schoolYear: record.schoolYear,
+            semester: record.semester,
+            subjectCode: record.subjectCode,
+          },
+          ip: meta?.ip,
+          userAgent: meta?.userAgent,
+        },
+        tx
+      );
+
+      return { ...record, units: Number(record.units) };
+    });
+  },
+
+  async updateAcademicRecord(
+    actor: Actor,
+    studentId: string,
+    recordId: string,
+    input: AcademicRecordUpdateInput,
+    meta?: { ip?: string; userAgent?: string }
+  ) {
+    const existing = await prisma.academicRecord.findFirst({
+      where: { id: recordId, studentId },
+    });
+    if (!existing) {
+      throw new HttpError(404, "NOT_FOUND", "Academic subject record not found.");
+    }
+
+    return prisma.$transaction(async (tx) => {
+      const updated = await tx.academicRecord.update({
+        where: { id: recordId },
+        data: {
+          ...(input.subjectCode !== undefined && { subjectCode: input.subjectCode }),
+          ...(input.subjectTitle !== undefined && { subjectTitle: input.subjectTitle }),
+          ...(input.units !== undefined && { units: input.units }),
+          ...(input.grade !== undefined && { grade: input.grade }),
+          ...(input.remarks !== undefined && { remarks: input.remarks }),
+          encodedById: actor.user.id,
+        },
+      });
+
+      await audit(
+        {
+          actorId: actor.user.id,
+          actorRole: actor.user.role,
+          action: "ACADEMIC_RECORD_UPDATED",
+          entityType: "AcademicRecord",
+          entityId: recordId,
+          metadata: {
+            studentId,
+            subjectCode: updated.subjectCode,
+            changedFields: Object.keys(input),
+          },
+          ip: meta?.ip,
+          userAgent: meta?.userAgent,
+        },
+        tx
+      );
+
+      return { ...updated, units: Number(updated.units) };
+    });
+  },
+
+  async deleteAcademicRecord(
+    actor: Actor,
+    studentId: string,
+    recordId: string,
+    meta?: { ip?: string; userAgent?: string }
+  ) {
+    const existing = await prisma.academicRecord.findFirst({
+      where: { id: recordId, studentId },
+    });
+    if (!existing) {
+      throw new HttpError(404, "NOT_FOUND", "Academic subject record not found.");
+    }
+
+    return prisma.$transaction(async (tx) => {
+      await tx.academicRecord.delete({ where: { id: recordId } });
+
+      await audit(
+        {
+          actorId: actor.user.id,
+          actorRole: actor.user.role,
+          action: "ACADEMIC_RECORD_DELETED",
+          entityType: "AcademicRecord",
+          entityId: recordId,
+          metadata: {
+            studentId,
+            subjectCode: existing.subjectCode,
+            schoolYear: existing.schoolYear,
+            semester: existing.semester,
+          },
+          ip: meta?.ip,
+          userAgent: meta?.userAgent,
+        },
+        tx
+      );
+
+      return { id: recordId, deleted: true };
     });
   },
 };

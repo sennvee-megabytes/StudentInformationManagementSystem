@@ -96,6 +96,41 @@ export const enrollmentUpsertSchema = z
   })
   .strict();
 
+export const academicRecordCreateSchema = z
+  .object({
+    schoolYear: schoolYearSchema,
+    semester: z.enum(["FIRST", "SECOND", "MIDYEAR"]),
+    subjectCode: z
+      .string()
+      .trim()
+      .min(2, "Subject code is required (e.g. ITEC 50).")
+      .max(24)
+      .regex(/^[A-Za-z0-9\s-]+$/, "Subject code may only contain letters, numbers, spaces, and hyphens.")
+      .transform((v) => v.toUpperCase()),
+    subjectTitle: z.string().trim().min(2, "Descriptive title is required.").max(120),
+    units: z.number().min(0, "Units cannot be negative.").max(12, "Units cannot exceed 12."),
+    grade: z.string().trim().max(16).nullable().optional(),
+    remarks: z.string().trim().max(60).nullable().optional(),
+  })
+  .strict();
+
+export const academicRecordUpdateSchema = z
+  .object({
+    subjectCode: z
+      .string()
+      .trim()
+      .min(2)
+      .max(24)
+      .regex(/^[A-Za-z0-9\s-]+$/)
+      .transform((v) => v.toUpperCase())
+      .optional(),
+    subjectTitle: z.string().trim().min(2).max(120).optional(),
+    units: z.number().min(0).max(12).optional(),
+    grade: z.string().trim().max(16).nullable().optional(),
+    remarks: z.string().trim().max(60).nullable().optional(),
+  })
+  .strict();
+
 export const studentListQuerySchema = z.object({
   q: z.string().trim().max(64).optional(),
   programId: z.string().uuid().optional(),
@@ -123,4 +158,6 @@ export const studentListQuerySchema = z.object({
 export type StudentCreateInput = z.infer<typeof studentCreateSchema>;
 export type StudentUpdateInput = z.infer<typeof studentUpdateSchema>;
 export type EnrollmentUpsertInput = z.infer<typeof enrollmentUpsertSchema>;
+export type AcademicRecordCreateInput = z.infer<typeof academicRecordCreateSchema>;
+export type AcademicRecordUpdateInput = z.infer<typeof academicRecordUpdateSchema>;
 export type StudentListQuery = z.infer<typeof studentListQuerySchema>;
