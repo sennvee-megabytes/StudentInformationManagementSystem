@@ -5,7 +5,7 @@ generator client {
 datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL") // pooled connection (runtime)
-  directUrl = env("DIRECT_URL")   // direct connection (migrations)
+  directUrl = env("DATABASE_URL_UNPOOLED") // direct connection (migrations)
 }
 
 enum Role {
@@ -137,6 +137,7 @@ model Student {
   sectionId        String?          @map("section_id") @db.Uuid
   enrollmentStatus EnrollmentStatus @default(ENROLLED) @map("enrollment_status")
   dateEnrolled     DateTime?        @map("date_enrolled") @db.Date
+  photoKey         String?          @map("photo_key")
   version          Int              @default(1)
   deletedAt        DateTime?        @map("deleted_at") @db.Timestamptz
   createdById      String?          @map("created_by_id") @db.Uuid

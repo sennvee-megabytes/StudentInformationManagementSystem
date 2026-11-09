@@ -43,6 +43,7 @@ type StudentDetail = {
   yearLevel: number;
   sectionId: string | null;
   enrollmentStatus: "ENROLLED" | "NOT_ENROLLED" | "ON_LEAVE" | "GRADUATED" | "DROPPED";
+  photoKey?: string | null;
   version: number;
   deletedAt: string | Date | null;
   enrollments: EnrollmentItem[];
@@ -88,6 +89,47 @@ export function StudentDetailManager({
   const [conflict, setConflict] = useState(false);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [photoKey, setPhotoKey] = useState<string | null>(student.photoKey ?? null);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+
+  async function handlePhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setError(null);
+    setSavedMessage(null);
+    setUploadingPhoto(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch(`/api/students/${student.id}/photo`, {
+        method: "POST",
+        body: formData,
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        setError(body.error?.message ?? "Failed to upload file to Neon Object Storage.");
+        return;
+      }
+      setPhotoKey(body.data.key);
+      setSavedMessage("Student photo / document uploaded to Neon Object Storage.");
+      router.refresh();
+    } catch {
+      setError("Network error while uploading file.");
+    } finally {
+      setUploadingPhoto(false);
+    }
+  }
+
+  async function handleViewPhoto() {
+    setError(null);
+    const res = await fetch(`/api/students/${student.id}/photo`);
+    const body = await res.json();
+    if (!res.ok || !body.data?.url) {
+      setError(body.error?.message ?? "Could not generate presigned URL.");
+      return;
+    }
+    window.open(body.data.url, "_blank", "noopener,noreferrer");
+  }
 
   const matchingSections = sections.filter(
     (s) => s.programId === programId && s.yearLevel === Number(yearLevel)
@@ -449,7 +491,29 @@ export function StudentDetailManager({
           </div>
         </div>
 
-        <div className="flex justify-end">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
+          <div className="flex flex-wrap items-center gap-3 text-xs">
+            <label className="cursor-pointer rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 font-medium text-slate-700 hover:bg-slate-100">
+              {uploadingPhoto ? "Uploading..." : "Upload ID Photo / Document (Neon Storage)"}
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp,application/pdf"
+                onChange={handlePhotoUpload}
+                disabled={uploadingPhoto || !!student.deletedAt}
+                className="hidden"
+              />
+            </label>
+            {photoKey && (
+              <button
+                type="button"
+                onClick={handleViewPhoto}
+                className="font-mono text-xs font-medium text-emerald-700 underline hover:text-emerald-800"
+              >
+                View Stored File ({photoKey.split("/").pop()})
+              </button>
+            )}
+          </div>
+
           <button
             type="submit"
             disabled={loading || !!student.deletedAt}
