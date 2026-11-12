@@ -1,6 +1,7 @@
 import { Prisma, Role } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { audit } from "@/lib/audit";
+import { getDefaultCurriculumSubjects } from "@/lib/curriculum";
 import { HttpError } from "@/lib/http";
 import { generateTemporaryPassword, hashPassword } from "@/lib/password";
 import {
@@ -68,6 +69,8 @@ async function validateProgramAndSection(opts: {
       }
     }
   }
+
+  return program;
 }
 
 export const studentService = {
@@ -182,11 +185,16 @@ export const studentService = {
       );
     }
 
-    await validateProgramAndSection({
+    const program = await validateProgramAndSection({
       programId: input.programId,
       yearLevel: input.yearLevel,
       sectionId: input.sectionId ?? null,
     });
+
+    const initialSubjects =
+      input.subjects && input.subjects.length > 0
+        ? input.subjects
+        : getDefaultCurriculumSubjects(program.code, input.yearLevel, input.semester);
 
     const temporaryPassword = generateTemporaryPassword(12);
     const passwordHash = await hashPassword(temporaryPassword);
@@ -240,6 +248,24 @@ export const studentService = {
           enrolledById: actor.user.id,
         },
       });
+
+      if (tx.academicRecord?.create) {
+        for (const subj of initialSubjects) {
+          await tx.academicRecord.create({
+            data: {
+              studentId: student.id,
+              schoolYear: input.schoolYear,
+              semester: input.semester,
+              subjectCode: subj.subjectCode,
+              subjectTitle: subj.subjectTitle,
+              units: subj.units,
+              grade: null,
+              remarks: "ENROLLED",
+              encodedById: actor.user.id,
+            },
+          });
+        }
+      }
 
       await audit(
         {
@@ -374,7 +400,7 @@ export const studentService = {
       throw new HttpError(404, "NOT_FOUND", "Student record not found.");
     }
 
-    await validateProgramAndSection({
+    const program = await validateProgramAndSection({
       programId: input.programId,
       yearLevel: input.yearLevel,
       sectionId: input.sectionId ?? null,
@@ -408,6 +434,38 @@ export const studentService = {
           enrolledById: actor.user.id,
         },
       });
+
+      if (input.status === "ENROLLED" && tx.academicRecord?.count && tx.academicRecord?.create) {
+        const existingTermRecords = await tx.academicRecord.count({
+          where: {
+            studentId,
+            schoolYear: input.schoolYear,
+            semester: input.semester,
+          },
+        });
+        if (existingTermRecords === 0) {
+          const defaultSubjects = getDefaultCurriculumSubjects(
+            program.code,
+            input.yearLevel,
+            input.semester
+          );
+          for (const subj of defaultSubjects) {
+            await tx.academicRecord.create({
+              data: {
+                studentId,
+                schoolYear: input.schoolYear,
+                semester: input.semester,
+                subjectCode: subj.subjectCode,
+                subjectTitle: subj.subjectTitle,
+                units: subj.units,
+                grade: null,
+                remarks: "ENROLLED",
+                encodedById: actor.user.id,
+              },
+            });
+          }
+        }
+      }
 
       await tx.student.update({
         where: { id: studentId },
@@ -668,6 +726,83 @@ export const studentService = {
       );
 
       return { id: recordId, deleted: true };
+    });
+  },
+
+  async loadCurriculumSubjects(
+    actor: Actor,
+    studentId: string,
+    input: { schoolYear: string; semester: "FIRST" | "SECOND" | "MIDYEAR" },
+    meta?: { ip?: string; userAgent?: string }
+  ) {
+    const student = await prisma.student.findUnique({
+      where: { id: studentId },
+      include: {
+        program: { select: { code: true } },
+        academicRecords: {
+          where: { schoolYear: input.schoolYear, semester: input.semester },
+          select: { subjectCode: true },
+        },
+      },
+    });
+    if (!student || student.deletedAt !== null) {
+      throw new HttpError(404, "NOT_FOUND", "Student record not found.");
+    }
+
+    const existingCodes = new Set(
+      student.academicRecords.map((r) => r.subjectCode.trim().toUpperCase())
+    );
+    const curriculum = getDefaultCurriculumSubjects(
+      student.program.code,
+      student.yearLevel,
+      input.semester
+    );
+    const toInsert = curriculum.filter(
+      (s) => !existingCodes.has(s.subjectCode.trim().toUpperCase())
+    );
+
+    if (toInsert.length === 0) {
+      return { addedCount: 0 };
+    }
+
+    return prisma.$transaction(async (tx) => {
+      for (const subj of toInsert) {
+        const record = await tx.academicRecord.create({
+          data: {
+            studentId,
+            schoolYear: input.schoolYear,
+            semester: input.semester,
+            subjectCode: subj.subjectCode,
+            subjectTitle: subj.subjectTitle,
+            units: subj.units,
+            grade: null,
+            remarks: "ENROLLED",
+            encodedById: actor.user.id,
+          },
+        });
+
+        await audit(
+          {
+            actorId: actor.user.id,
+            actorRole: actor.user.role,
+            action: "ACADEMIC_RECORD_ADDED",
+            entityType: "AcademicRecord",
+            entityId: record.id,
+            metadata: {
+              studentId,
+              schoolYear: record.schoolYear,
+              semester: record.semester,
+              subjectCode: record.subjectCode,
+              source: "CURRICULUM_LOAD",
+            },
+            ip: meta?.ip,
+            userAgent: meta?.userAgent,
+          },
+          tx
+        );
+      }
+
+      return { addedCount: toInsert.length };
     });
   },
 };

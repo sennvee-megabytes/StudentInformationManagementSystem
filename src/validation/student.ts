@@ -69,11 +69,29 @@ export const studentCreateSchema = z
     sectionId: z.string().uuid().nullable().optional(),
     schoolYear: schoolYearSchema,
     semester: z.enum(["FIRST", "SECOND", "MIDYEAR"]),
+    subjects: z
+      .array(
+        z
+          .object({
+            subjectCode: z
+              .string()
+              .trim()
+              .min(2)
+              .max(24)
+              .regex(/^[A-Za-z0-9\s-]+$/)
+              .transform((v) => v.toUpperCase()),
+            subjectTitle: z.string().trim().min(2).max(120),
+            units: z.number().min(0).max(12),
+          })
+          .strict()
+      )
+      .max(20)
+      .optional(),
   })
   .strict();
 
 export const studentUpdateSchema = studentCreateSchema
-  .omit({ studentNumber: true, schoolYear: true, semester: true })
+  .omit({ studentNumber: true, schoolYear: true, semester: true, subjects: true })
   .partial()
   .extend({
     enrollmentStatus: z

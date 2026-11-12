@@ -195,12 +195,20 @@ export function StudentListView({
                     </span>
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <Link
-                      href={`${basePath}/${st.id}`}
-                      className="rounded-md border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                    >
-                      View / Edit
-                    </Link>
+                    <div className="inline-flex items-center justify-end gap-2">
+                      <Link
+                        href={`${basePath}/${st.id}#academic-records`}
+                        className="rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800 hover:bg-emerald-100"
+                      >
+                        Subjects / Grades
+                      </Link>
+                      <Link
+                        href={`${basePath}/${st.id}`}
+                        className="rounded-md border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                      >
+                        View / Edit
+                      </Link>
+                    </div>
                   </td>
                 </tr>
               ))

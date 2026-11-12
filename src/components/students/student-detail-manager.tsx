@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, BookOpen, Plus, RotateCcw, Save, Trash2 } from "lucide-react";
+import { AlertTriangle, BookOpen, Plus, RotateCcw, Save, Sparkles, Trash2 } from "lucide-react";
+import { ALL_PRESET_SUBJECTS } from "@/lib/curriculum";
 
 type ProgramOption = { id: string; code: string; name: string };
 type SectionOption = {
@@ -356,6 +357,40 @@ export function StudentDetailManager({
       router.refresh();
     } catch {
       setError("Network error while removing subject record.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleLoadCurriculum() {
+    setError(null);
+    setSavedMessage(null);
+    setLoading(true);
+
+    try {
+      const res = await fetch(`/api/students/${student.id}/academic`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          loadCurriculum: true,
+          schoolYear: acadSchoolYear.trim(),
+          semester: acadSemester,
+        }),
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        setError(body.error?.message ?? "Failed to load curriculum subjects.");
+        return;
+      }
+      const added = body.data?.addedCount ?? 0;
+      setSavedMessage(
+        added > 0
+          ? `Loaded ${added} standard curriculum subject(s) for ${acadSchoolYear} (${acadSemester}).`
+          : `All standard curriculum subjects for ${acadSchoolYear} (${acadSemester}) are already registered.`
+      );
+      router.refresh();
+    } catch {
+      setError("Network error while loading curriculum subjects.");
     } finally {
       setLoading(false);
     }
@@ -720,22 +755,62 @@ export function StudentDetailManager({
       </div>
 
       {/* Academic Subject Registration & Grade Encoding */}
-      <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-xs">
-        <div className="flex items-center gap-2">
-          <BookOpen className="h-4 w-4 text-emerald-700" />
-          <h2 className="text-sm font-semibold text-slate-900">
-            Academic Subjects, Units & Grade Encoding
-          </h2>
+      <div
+        id="academic-records"
+        className="scroll-mt-6 rounded-xl border border-slate-200 bg-white p-6 shadow-xs"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <BookOpen className="h-4 w-4 text-emerald-700" />
+              <h2 className="text-sm font-semibold text-slate-900">
+                Academic Subjects, Units & Grade Encoding
+              </h2>
+            </div>
+            <p className="mt-1 text-xs text-slate-500">
+              Register subjects for the student&apos;s term and encode or update grades and remarks.
+              Subjects added here appear immediately in the Student Portal under Academic Records.
+            </p>
+          </div>
+          <button
+            type="button"
+            disabled={loading || !!student.deletedAt}
+            onClick={handleLoadCurriculum}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800 hover:bg-emerald-100 disabled:opacity-60"
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+            Load Standard Curriculum ({acadSchoolYear} · {acadSemester})
+          </button>
         </div>
-        <p className="mt-1 text-xs text-slate-500">
-          Register subjects for the student&apos;s term and encode or update grades and remarks.
-          Subjects added here appear immediately in the Student Portal under Academic Records.
-        </p>
 
         <form
           onSubmit={handleAddAcademicRecord}
           className="mt-4 grid gap-3 rounded-lg border border-slate-200 bg-slate-50/70 p-4 sm:grid-cols-12"
         >
+          <div className="sm:col-span-12">
+            <label className="block text-xs font-medium text-slate-700">
+              Quick Select CEIT Subject (Optional — auto-fills Code, Title & Units)
+            </label>
+            <select
+              value=""
+              onChange={(e) => {
+                const found = ALL_PRESET_SUBJECTS.find((s) => s.subjectCode === e.target.value);
+                if (found) {
+                  setSubjectCode(found.subjectCode);
+                  setSubjectTitle(found.subjectTitle);
+                  setUnits(String(found.units));
+                }
+              }}
+              className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs"
+            >
+              <option value="">— Choose a CEIT curriculum subject or type custom below —</option>
+              {ALL_PRESET_SUBJECTS.map((s) => (
+                <option key={s.subjectCode} value={s.subjectCode}>
+                  {s.subjectCode} — {s.subjectTitle} ({s.units.toFixed(1)} units)
+                </option>
+              ))}
+            </select>
+          </div>
           <div className="sm:col-span-2">
             <label className="block text-xs font-medium text-slate-700">School Year</label>
             <input

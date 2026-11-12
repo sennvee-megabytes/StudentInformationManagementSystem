@@ -1,9 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { UserPlus } from "lucide-react";
+import { BookOpen, Plus, Trash2, UserPlus } from "lucide-react";
 import { TempPasswordDialog } from "@/components/admin/temp-password-dialog";
+import {
+  ALL_PRESET_SUBJECTS,
+  CurriculumSubject,
+  getDefaultCurriculumSubjects,
+} from "@/lib/curriculum";
 
 type ProgramOption = {
   id: string;
@@ -49,6 +54,36 @@ export function StudentRegistrationForm({
   const [schoolYear, setSchoolYear] = useState("2026-2027");
   const [semester, setSemester] = useState<"FIRST" | "SECOND" | "MIDYEAR">("FIRST");
 
+  const selectedProgramCode =
+    programs.find((p) => p.id === programId)?.code ?? "BSIT";
+
+  const [subjects, setSubjects] = useState<CurriculumSubject[]>(() =>
+    getDefaultCurriculumSubjects(selectedProgramCode, 1, "FIRST")
+  );
+  const [newSubjCode, setNewSubjCode] = useState("");
+  const [newSubjTitle, setNewSubjTitle] = useState("");
+  const [newSubjUnits, setNewSubjUnits] = useState("3.0");
+
+  useEffect(() => {
+    const code = programs.find((p) => p.id === programId)?.code ?? "BSIT";
+    setSubjects(getDefaultCurriculumSubjects(code, Number(yearLevel), semester));
+  }, [programId, yearLevel, semester, programs]);
+
+  function handleAddSubjectRow() {
+    if (!newSubjCode.trim() || !newSubjTitle.trim()) return;
+    setSubjects((prev) => [
+      ...prev,
+      {
+        subjectCode: newSubjCode.trim().toUpperCase(),
+        subjectTitle: newSubjTitle.trim(),
+        units: Number(newSubjUnits) || 3.0,
+      },
+    ]);
+    setNewSubjCode("");
+    setNewSubjTitle("");
+    setNewSubjUnits("3.0");
+  }
+
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
   const [loading, setLoading] = useState(false);
@@ -90,6 +125,7 @@ export function StudentRegistrationForm({
           sectionId: sectionId || null,
           schoolYear: schoolYear.trim(),
           semester,
+          subjects,
         }),
       });
 
@@ -394,6 +430,146 @@ export function StudentRegistrationForm({
                 <option value="MIDYEAR">Midyear</option>
               </select>
             </div>
+          </div>
+        </section>
+
+        <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-xs">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <BookOpen className="h-4 w-4 text-emerald-700" />
+              <h2 className="text-sm font-semibold text-slate-900">
+                4. Initial Subject Registration ({selectedProgramCode} – Year {yearLevel},{" "}
+                {semester} Semester)
+              </h2>
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                setSubjects(
+                  getDefaultCurriculumSubjects(selectedProgramCode, Number(yearLevel), semester)
+                )
+              }
+              className="text-xs font-medium text-emerald-700 hover:underline"
+            >
+              Reset to Standard Curriculum
+            </button>
+          </div>
+          <p className="mt-1 text-xs text-slate-500">
+            These subjects will be registered immediately in the student&apos;s Academic Records
+            upon enrollment. You can add or remove subjects below.
+          </p>
+
+          <div className="mt-4 grid gap-3 rounded-lg border border-slate-200 bg-slate-50/70 p-3 sm:grid-cols-12">
+            <div className="sm:col-span-3">
+              <label className="block text-[11px] font-medium text-slate-700">
+                Quick Preset Subject
+              </label>
+              <select
+                value=""
+                onChange={(e) => {
+                  const found = ALL_PRESET_SUBJECTS.find((s) => s.subjectCode === e.target.value);
+                  if (found) {
+                    setNewSubjCode(found.subjectCode);
+                    setNewSubjTitle(found.subjectTitle);
+                    setNewSubjUnits(String(found.units));
+                  }
+                }}
+                className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs"
+              >
+                <option value="">— Select preset or type custom —</option>
+                {ALL_PRESET_SUBJECTS.map((s) => (
+                  <option key={s.subjectCode} value={s.subjectCode}>
+                    {s.subjectCode} – {s.subjectTitle} ({s.units}u)
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="sm:col-span-2">
+              <label className="block text-[11px] font-medium text-slate-700">Subject Code</label>
+              <input
+                value={newSubjCode}
+                onChange={(e) => setNewSubjCode(e.target.value)}
+                placeholder="e.g. ITEC 50"
+                className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 font-mono text-xs uppercase"
+              />
+            </div>
+            <div className="sm:col-span-4">
+              <label className="block text-[11px] font-medium text-slate-700">
+                Descriptive Title
+              </label>
+              <input
+                value={newSubjTitle}
+                onChange={(e) => setNewSubjTitle(e.target.value)}
+                placeholder="e.g. Web Systems and Technologies"
+                className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs"
+              />
+            </div>
+            <div className="sm:col-span-1">
+              <label className="block text-[11px] font-medium text-slate-700">Units</label>
+              <input
+                type="number"
+                step="0.5"
+                min="0.5"
+                max="12"
+                value={newSubjUnits}
+                onChange={(e) => setNewSubjUnits(e.target.value)}
+                className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs"
+              />
+            </div>
+            <div className="flex items-end justify-end sm:col-span-2">
+              <button
+                type="button"
+                onClick={handleAddSubjectRow}
+                className="inline-flex w-full items-center justify-center gap-1 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Add Subject
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-3 overflow-x-auto rounded-lg border border-slate-200">
+            <table className="w-full text-left text-xs">
+              <thead className="border-b border-slate-200 bg-slate-50 text-[11px] font-semibold uppercase text-slate-600">
+                <tr>
+                  <th className="px-3 py-2">Subject Code</th>
+                  <th className="px-3 py-2">Descriptive Title</th>
+                  <th className="px-3 py-2">Units</th>
+                  <th className="px-3 py-2 text-right">Remove</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {subjects.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="px-3 py-4 text-center text-slate-500">
+                      No initial subjects selected. Click &ldquo;Reset to Standard Curriculum&rdquo;
+                      or add subjects above.
+                    </td>
+                  </tr>
+                ) : (
+                  subjects.map((subj, idx) => (
+                    <tr key={`${subj.subjectCode}-${idx}`}>
+                      <td className="px-3 py-2 font-mono font-semibold text-slate-900">
+                        {subj.subjectCode}
+                      </td>
+                      <td className="px-3 py-2 text-slate-700">{subj.subjectTitle}</td>
+                      <td className="px-3 py-2 text-slate-700">{subj.units.toFixed(1)}</td>
+                      <td className="px-3 py-2 text-right">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setSubjects((prev) => prev.filter((_, i) => i !== idx))
+                          }
+                          className="inline-flex items-center gap-1 text-red-600 hover:underline"
+                        >
+                          <Trash2 className="h-3 w-3" /> Remove
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
         </section>
 
